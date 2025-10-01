@@ -1,0 +1,8 @@
+package neko.kuro.entities;
+
+@Data
+@Serdable
+@MappedEntity
+public class Recipe {
+
+}
