@@ -20,7 +20,7 @@
     <micronaut.aot.enabled>false</micronaut.aot.enabled>
     <micronaut.aot.packageName>neko.kuro.aot.generated</micronaut.aot.packageName>
     <micronaut.runtime>netty</micronaut.runtime>
-    <exec.mainClass>neko.kuro.Application</exec.mainClass>
+    <exec.mainClass>neko.kuro.projectGorgonCrafting.Application</exec.mainClass>
   </properties>
 
   <repositories>

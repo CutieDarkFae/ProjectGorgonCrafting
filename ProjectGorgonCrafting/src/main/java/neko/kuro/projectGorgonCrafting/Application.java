@@ -1,4 +1,4 @@
-package neko.kuro;
+package neko.kuro.projectGorgonCrafting;
 
 import io.micronaut.runtime.Micronaut;
 
