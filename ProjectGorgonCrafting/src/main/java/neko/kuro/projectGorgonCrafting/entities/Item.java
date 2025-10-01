@@ -2,6 +2,7 @@ package neko.kuro.projectGorgonCrafting.entities;
 
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.MappedEntity;
+import io.micronaut.data.annotation.Relation;
 import io.micronaut.serde.annotation.Serdeable;
 import lombok.Data;
 
@@ -15,9 +16,13 @@ public class Item {
     @Id
     private UUID id;
     private String name;
+    @Relation(Relation.Kind.ONE_TO_MANY)
     private List<Creature> droppedBy;
+    @Relation(Relation.Kind.ONE_TO_MANY)
     private List<Person> barteredBy;
+    @Relation(Relation.Kind.ONE_TO_MANY)
     private List<Person> tradedBy;
+    @Relation(Relation.Kind.ONE_TO_MANY)
     private List<Recipe> usedIn;
     private int sellsFor;
 }

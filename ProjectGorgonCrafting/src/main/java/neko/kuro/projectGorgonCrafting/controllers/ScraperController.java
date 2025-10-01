@@ -49,8 +49,6 @@ public class ScraperController {
                     .version(HttpClient.Version.HTTP_1_1)
                     .followRedirects(HttpClient.Redirect.NORMAL)
                     .connectTimeout(Duration.ofSeconds(20))
-                    .proxy(ProxySelector.of(new InetSocketAddress("proxy.example.com", 80)))
-                    .authenticator(Authenticator.getDefault())
                     .build();
 
             List<URI> worklist = new ArrayList<>();
@@ -68,8 +66,7 @@ public class ScraperController {
 
                 String page = pageLoadResponse.body();
                 // begin page parsing
-                boolean tbodyFound = false;
-                boolean rowFound = false;
+                boolean parsing = false;
                 int index = 0;
                 Recipe recipe = null;
                 ItemAmount itemAmount = null;
@@ -77,65 +74,80 @@ public class ScraperController {
                 XMLEventReader reader = xmlInputFactory.createXMLEventReader(new ByteArrayInputStream(page.getBytes()));
                 while(reader.hasNext()) {
                     XMLEvent nextEvent = reader.nextEvent();
-                    if (nextEvent.isStartElement()) {
-                        StartElement startElement = nextEvent.asStartElement();
-                        switch (startElement.getName().getLocalPart()) {
-                            case "tr" : {
-                                recipe = new Recipe();
-                                index = 0;
-                                break;
+                    if (!parsing) {
+                        if (nextEvent.isEndElement()) {
+                            EndElement endElement = nextEvent.asEndElement();
+                            if (endElement.getName().getLocalPart().equals("tr")) {
+                                // we've reached the end of the header row, game on
+                                parsing = true;
                             }
-                            case "td": {
-                                if (index == 0) {
-                                    recipe.setLevel(Integer.parseInt(nextEvent.asCharacters().getData()));
-                                } else if (index == 1) {
-                                    recipe.setName(nextEvent.asCharacters().getData());
-                                } else if (index == 2) {
-                                    recipe.setXpForFirstCrafting(Integer.parseInt(nextEvent.asCharacters().getData()));
-                                } else if (index == 3) {
-                                    recipe.setXpForSubsequentCrafting(Integer.parseInt(nextEvent.asCharacters().getData()));
-                                } else if (index == 4 || index == 5) {
-                                    // ingredients, complex
-                                    itemAmount = new ItemAmount();
-                                    itemAmount.setAmount(Integer.parseInt(nextEvent.asCharacters().getData().substring(1)));
-                                } else if (index == 6) {
-                                    recipe.setDescription(nextEvent.asCharacters().getData());
-                                } else if (index == 7) {
-                                    // sources, complex
+                        }
+                    } else {
+                        if (nextEvent.isStartElement()) {
+                            StartElement startElement = nextEvent.asStartElement();
+                            switch (startElement.getName().getLocalPart()) {
+                                case "tr": {
+                                    recipe = new Recipe();
+                                    index = 0;
+                                    break;
                                 }
-                                break;
+                                case "td": {
+                                    if (index == 0) {
+                                        nextEvent = reader.nextEvent();
+                                        recipe.setLevel(Integer.parseInt(nextEvent.asCharacters().getData().trim()));
+                                    } else if (index == 1) {
+                                        nextEvent = reader.nextEvent();
+                                        recipe.setName(nextEvent.asCharacters().getData().trim());
+                                    } else if (index == 2) {
+                                        nextEvent = reader.nextEvent();
+                                        recipe.setXpForFirstCrafting(Integer.parseInt(nextEvent.asCharacters().getData().trim()));
+                                    } else if (index == 3) {
+                                        nextEvent = reader.nextEvent();
+                                        recipe.setXpForSubsequentCrafting(Integer.parseInt(nextEvent.asCharacters().getData().trim()));
+                                    } else if (index == 4 || index == 5) {
+                                        // ingredients, complex
+                                        // set a flag, as we need to parse a lot of stuff before the /td
+                                        nextEvent = reader.nextEvent();
+                                        itemAmount = new ItemAmount();
+                                        itemAmount.setAmount(Integer.parseInt(nextEvent.asCharacters().getData().substring(1)));
+                                    } else if (index == 6) {
+                                        nextEvent = reader.nextEvent();
+                                        recipe.setDescription(nextEvent.asCharacters().getData());
+                                    } else if (index == 7) {
+                                        // sources, complex
+                                    }
+                                    break;
+                                }
+                                case "a": {
+                                    if (index == 4) {
+                                        String line = nextEvent.asCharacters().getData();
+                                        int hrefIndex = 0;
+                                    }
+                                    break;
+                                }
                             }
-                            case "a": {
-                                if (index == 4) {
-                                    String line = nextEvent.asCharacters().getData();
-                                    int hrefIndex = 0;
-                                    int
+                        } else if (nextEvent.isEndElement()) {
+                            EndElement endElement = nextEvent.asEndElement();
+                            switch (endElement.getName().getLocalPart()) {
+                                case "td": {
+                                    // end of element
+                                    index++;
+                                    break;
+                                }
+                                case "tr": {
+                                    // end of row
+                                    recipeRepository.save(recipe);
+                                    break;
+                                }
+                                case "table": {
+                                    parsing = false;
+                                    break;
                                 }
                             }
                         }
-                        if (!tbodyFound && startElement.getName().getLocalPart().equals("tbody")) {
-                            tbodyFound = true;
-                        } else if (tbodyFound && !rowFound && startElement.getName().getLocalPart().equals("tr")) {
-                            rowFound = true;
-                        } else if (tbodyFound && rowFound && startElement.getName().getLocalPart().equals("td")) {
-                            // actual data found, what's our index?
-                            if (index == 0) {
-                                recipe = new Recipe();
-                            }
-                        }
-                    } else if (nextEvent.isEndElement()) {
-                        EndElement endElement = nextEvent.asEndElement();
-                        if (tbodyFound && rowFound && endElement.getName().getLocalPart().equals("td")) {
-                            index++;
-                        } else if (tbodyFound && rowFound && endElement.getName().getLocalPart().equals("tr")) {
-                            rowFound = false;
-                        } else if (tbodyFound && !rowFound && endElement.getName().getLocalPart().equals("tbody")) {
-                            tbodyFound = false;
-                        }
-                    }
-                }
-
-            }
+                    } // end if parsing
+                } // end hasNext
+            } // end while has work
         } catch (URISyntaxException ex) {
             String msg = "Unable to parse URI";
             logger.error(msg, ex);
@@ -152,15 +164,8 @@ public class ScraperController {
             String msg = "Unable to instantiate XML parsing";
             logger.error(msg, ex);
             throw new WrappedException(msg, ex);
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } catch (XMLStreamException e) {
-            throw new RuntimeException(e);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
         }
+        return HttpResponse.accepted().body("Yes");
     }
 
 }

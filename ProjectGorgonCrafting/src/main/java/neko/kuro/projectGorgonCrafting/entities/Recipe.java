@@ -2,6 +2,7 @@ package neko.kuro.projectGorgonCrafting.entities;
 
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.MappedEntity;
+import io.micronaut.data.annotation.Relation;
 import io.micronaut.serde.annotation.Serdeable;
 import lombok.Data;
 
@@ -18,7 +19,9 @@ public class Recipe {
     private int level;
     private int xpForFirstCrafting;
     private int xpForSubsequentCrafting;
+    @Relation(Relation.Kind.ONE_TO_MANY)
     private List<ItemAmount> ingredients;
+    @Relation(Relation.Kind.ONE_TO_MANY)
     private List<ItemAmount> craftingResults;
     private String description;
 }
