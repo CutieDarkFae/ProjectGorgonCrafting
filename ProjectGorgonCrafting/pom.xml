@@ -46,6 +46,11 @@
       <artifactId>micronaut-serde-jackson</artifactId>
       <scope>compile</scope>
     </dependency>
+      <dependency>
+          <groupId>com.google.code.gson</groupId>
+          <artifactId>gson</artifactId>
+          <version>2.13.2</version>
+      </dependency>
     <dependency>
       <groupId>io.micronaut.sql</groupId>
       <artifactId>micronaut-jdbc-hikari</artifactId>
@@ -65,6 +70,11 @@
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.micronaut.jsonschema</groupId>
+      <artifactId>micronaut-json-schema-annotations</artifactId>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>io.micronaut</groupId>

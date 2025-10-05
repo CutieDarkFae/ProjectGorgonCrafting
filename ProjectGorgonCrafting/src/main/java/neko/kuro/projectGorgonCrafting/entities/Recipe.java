@@ -6,6 +6,7 @@ import io.micronaut.data.annotation.Relation;
 import io.micronaut.serde.annotation.Serdeable;
 import lombok.Data;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +25,7 @@ public class Recipe {
     @Relation(Relation.Kind.ONE_TO_MANY)
     private List<ItemAmount> craftingResults;
     private String description;
+    private URI location;
 }
 //Recipe {
 //    Name: <string>

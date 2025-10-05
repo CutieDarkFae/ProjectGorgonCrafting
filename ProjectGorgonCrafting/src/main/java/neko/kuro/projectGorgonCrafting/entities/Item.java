@@ -6,6 +6,7 @@ import io.micronaut.data.annotation.Relation;
 import io.micronaut.serde.annotation.Serdeable;
 import lombok.Data;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,7 +16,9 @@ import java.util.UUID;
 public class Item {
     @Id
     private UUID id;
+    private String internalId;
     private String name;
+    private String description;
     @Relation(Relation.Kind.ONE_TO_MANY)
     private List<Creature> droppedBy;
     @Relation(Relation.Kind.ONE_TO_MANY)
@@ -25,13 +28,6 @@ public class Item {
     @Relation(Relation.Kind.ONE_TO_MANY)
     private List<Recipe> usedIn;
     private int sellsFor;
+    private URI location;
+    private URI image;
 }
-
-//Item {
-//    Name: <string>
-//            DroppedBy: <List<Creature>>
-//    BarteredBy: <List<Person>>
-//    TradedBy: <List<Person>>
-//    UsedIn<List<Recipe>>
-//    SellsFor: <number>
-//}

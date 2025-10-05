@@ -1,171 +1,99 @@
 package neko.kuro.projectGorgonCrafting.controllers;
 
-import io.micronaut.http.HttpRequest;
+import com.google.gson.Gson;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
+
 import neko.kuro.projectGorgonCrafting.Exceptions.WrappedException;
-import neko.kuro.projectGorgonCrafting.entities.ItemAmount;
-import neko.kuro.projectGorgonCrafting.entities.Recipe;
+import neko.kuro.projectGorgonCrafting.repositories.ItemRepository;
 import neko.kuro.projectGorgonCrafting.repositories.RecipeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.events.EndElement;
-import javax.xml.stream.events.StartElement;
-import javax.xml.stream.events.XMLEvent;
-import java.io.ByteArrayInputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.*;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 
 @Controller("/scraper")
 public class ScraperController {
     private static final Logger logger = LoggerFactory.getLogger(ScraperController.class);
 
     private RecipeRepository recipeRepository;
+    private ItemRepository itemRepository;
 
-    public ScraperController(RecipeRepository recipeRepository) {
+    public ScraperController(
+            RecipeRepository recipeRepository,
+            ItemRepository itemRepository
+    ) {
         this.recipeRepository = recipeRepository;
+        this.itemRepository = itemRepository;
     }
 
-    @Get("/alchemy")
-    public HttpResponse<String> scrapeAlchemy(HttpRequest<String> request) throws WrappedException {
-        final String url = "https://wiki.projectgorgon.com/wiki/Alchemy/Recipes";
-        Duration delay = Duration.of(1, ChronoUnit.SECONDS);
+    // actually, I can do all this with the JSON files from the CDN, much nicer.
+    @Get("/json/items")
+    public HttpResponse<String> scrapeJson() throws WrappedException {
+        String base = "https://cdn.projectgorgon.com/v435/data/";
 
-        try {
-            HttpClient client = HttpClient.newBuilder()
-                    .version(HttpClient.Version.HTTP_1_1)
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .connectTimeout(Duration.ofSeconds(20))
-                    .build();
+        try (HttpClient client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(20))
+                .build();
+        ) {
+            Gson gson = new Gson();
+            String cdnIconBase = "http://cdn.projectgorgon.com/v435/icons/icon_";
+            String cdnIconSuffix = ".png";
 
-            List<URI> worklist = new ArrayList<>();
-            worklist.add(new URI(url));
+            URI uri = new URI("https://cdn.projectgorgon.com/v435/data/items.json");
 
-            XMLInputFactory xmlInputFactory = XMLInputFactory.newInstance();
+            java.net.http.HttpRequest pageLoadRequest = java.net.http.HttpRequest.newBuilder(uri)
+                .GET().build();
+            java.net.http.HttpResponse<String> pageLoadResponse =
+                client.send(pageLoadRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
 
-            while(!worklist.isEmpty()) {
-                Instant tStart = Instant.now();
+            String page = pageLoadResponse.body();
+            Map map;
+            try {
+                map = gson.fromJson(page, Map.class);
+            } catch (IllegalStateException ex) {
+                String msg = "During parsing:\n" + page;
+                logger.error(msg, ex);
+                throw new WrappedException(msg, ex);
+            }
+            for (Object key : map.keySet()) {
+                neko.kuro.projectGorgonCrafting.entities.Item itemEntity = new neko.kuro.projectGorgonCrafting.entities.Item();
+                Object obj = map.get(key);
+                itemEntity.setInternalId((String)key);
+                Map values = (Map)obj;
+                String description = (String) values.get("Description");
+                String name = (String) values.get("InternalName");
+                int iconId = ((Double) values.get("IconId")).intValue();
+                int value = ((Double) values.get("Value")).intValue();
 
-                URI uri = worklist.get(0);
+                itemEntity.setDescription(description);
+                itemEntity.setName(name);
+                itemEntity.setSellsFor(value);
+                itemEntity.setImage(new URI(cdnIconBase + iconId + cdnIconSuffix));
 
-                java.net.http.HttpRequest pageLoadRequest = java.net.http.HttpRequest.newBuilder(uri).GET().build();
-                java.net.http.HttpResponse<String> pageLoadResponse = client.send(pageLoadRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
-
-                String page = pageLoadResponse.body();
-                // begin page parsing
-                boolean parsing = false;
-                int index = 0;
-                Recipe recipe = null;
-                ItemAmount itemAmount = null;
-
-                XMLEventReader reader = xmlInputFactory.createXMLEventReader(new ByteArrayInputStream(page.getBytes()));
-                while(reader.hasNext()) {
-                    XMLEvent nextEvent = reader.nextEvent();
-                    if (!parsing) {
-                        if (nextEvent.isEndElement()) {
-                            EndElement endElement = nextEvent.asEndElement();
-                            if (endElement.getName().getLocalPart().equals("tr")) {
-                                // we've reached the end of the header row, game on
-                                parsing = true;
-                            }
-                        }
-                    } else {
-                        if (nextEvent.isStartElement()) {
-                            StartElement startElement = nextEvent.asStartElement();
-                            switch (startElement.getName().getLocalPart()) {
-                                case "tr": {
-                                    recipe = new Recipe();
-                                    index = 0;
-                                    break;
-                                }
-                                case "td": {
-                                    if (index == 0) {
-                                        nextEvent = reader.nextEvent();
-                                        recipe.setLevel(Integer.parseInt(nextEvent.asCharacters().getData().trim()));
-                                    } else if (index == 1) {
-                                        nextEvent = reader.nextEvent();
-                                        recipe.setName(nextEvent.asCharacters().getData().trim());
-                                    } else if (index == 2) {
-                                        nextEvent = reader.nextEvent();
-                                        recipe.setXpForFirstCrafting(Integer.parseInt(nextEvent.asCharacters().getData().trim()));
-                                    } else if (index == 3) {
-                                        nextEvent = reader.nextEvent();
-                                        recipe.setXpForSubsequentCrafting(Integer.parseInt(nextEvent.asCharacters().getData().trim()));
-                                    } else if (index == 4 || index == 5) {
-                                        // ingredients, complex
-                                        // set a flag, as we need to parse a lot of stuff before the /td
-                                        nextEvent = reader.nextEvent();
-                                        itemAmount = new ItemAmount();
-                                        itemAmount.setAmount(Integer.parseInt(nextEvent.asCharacters().getData().substring(1)));
-                                    } else if (index == 6) {
-                                        nextEvent = reader.nextEvent();
-                                        recipe.setDescription(nextEvent.asCharacters().getData());
-                                    } else if (index == 7) {
-                                        // sources, complex
-                                    }
-                                    break;
-                                }
-                                case "a": {
-                                    if (index == 4) {
-                                        String line = nextEvent.asCharacters().getData();
-                                        int hrefIndex = 0;
-                                    }
-                                    break;
-                                }
-                            }
-                        } else if (nextEvent.isEndElement()) {
-                            EndElement endElement = nextEvent.asEndElement();
-                            switch (endElement.getName().getLocalPart()) {
-                                case "td": {
-                                    // end of element
-                                    index++;
-                                    break;
-                                }
-                                case "tr": {
-                                    // end of row
-                                    recipeRepository.save(recipe);
-                                    break;
-                                }
-                                case "table": {
-                                    parsing = false;
-                                    break;
-                                }
-                            }
-                        }
-                    } // end if parsing
-                } // end hasNext
-            } // end while has work
+                itemRepository.save(itemEntity);
+            }
         } catch (URISyntaxException ex) {
-            String msg = "Unable to parse URI";
+            String msg = "Unable to parse url";
             logger.error(msg, ex);
             throw new WrappedException(msg, ex);
         } catch (InterruptedException ex) {
-            String msg = "Page load interrupted";
+            String msg = "Unable to connect to site";
             logger.error(msg, ex);
             throw new WrappedException(msg, ex);
         } catch (IOException ex) {
-            String msg = "Page load exception";
-            logger.error(msg, ex);
-            throw new WrappedException(msg, ex);
-        } catch (XMLStreamException ex) {
-            String msg = "Unable to instantiate XML parsing";
+            String msg = "Unable to read from site";
             logger.error(msg, ex);
             throw new WrappedException(msg, ex);
         }
-        return HttpResponse.accepted().body("Yes");
+        return HttpResponse.ok();
     }
-
 }
